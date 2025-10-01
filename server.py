@@ -2,8 +2,12 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
 from urllib.parse import urlparse, parse_qs
+import base64
 
-DATA_FILE = "data.json" 
+DATA_FILE = "data.json"
+
+USERNAME = "user"
+PASSWORD = "pass"
 
 def read_data():
     if os.path.exists(DATA_FILE):
@@ -16,12 +20,40 @@ def write_data(data):
         json.dump(data, f, indent=4)
 
 class MotoBookingServer(BaseHTTPRequestHandler):
+
     def _set_headers(self, status=200):
         self.send_response(status)
         self.send_header("Content-type", "application/json")
         self.end_headers()
 
+    def _authenticate(self):
+        auth_header = self.headers.get('Authorization')
+        if auth_header is None or not auth_header.startswith('Basic '):
+            self._send_unauthorized()
+            return False
+
+        encoded_cred = auth_header.split(' ')[1]
+        decoded_bytes = base64.b64decode(encoded_cred)
+        decoded_str = decoded_bytes.decode('utf-8')
+        username, password = decoded_str.split(':', 1)
+
+        if username == USERNAME and password == PASSWORD:
+            return True
+        else:
+            self._send_unauthorized()
+            return False
+
+    def _send_unauthorized(self):
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="Moto Booking Server"')
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"error": "Unauthorized"}).encode("utf-8"))
+
     def do_GET(self):
+        if not self._authenticate():
+            return
+
         query = parse_qs(urlparse(self.path).query)
         bookings = read_data()
         if "id" in query:
@@ -42,6 +74,9 @@ class MotoBookingServer(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(bookings).encode("utf-8"))
 
     def do_POST(self):
+        if not self._authenticate():
+            return
+
         content_length = int(self.headers.get("Content-Length", 0))
         post_data = self.rfile.read(content_length)
         new_booking = json.loads(post_data.decode("utf-8"))
@@ -55,6 +90,9 @@ class MotoBookingServer(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(new_booking).encode("utf-8"))
 
     def do_PUT(self):
+        if not self._authenticate():
+            return
+
         query = parse_qs(urlparse(self.path).query)
         if "id" not in query:
             self._set_headers(400)
@@ -71,7 +109,7 @@ class MotoBookingServer(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", 0))
         put_data = self.rfile.read(content_length)
         updated_booking = json.loads(put_data.decode("utf-8"))
-        updated_booking["id"] = booking_id  
+        updated_booking["id"] = booking_id
 
         bookings = read_data()
         for i, booking in enumerate(bookings):
@@ -86,6 +124,9 @@ class MotoBookingServer(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps({"error": "Booking not found"}).encode("utf-8"))
 
     def do_DELETE(self):
+        if not self._authenticate():
+            return
+
         query = parse_qs(urlparse(self.path).query)
         if "id" not in query:
             self._set_headers(400)
@@ -111,6 +152,9 @@ class MotoBookingServer(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"message": f"Booking {booking_id} deleted"}).encode("utf-8"))
 
     def do_PATCH(self):
+        if not self._authenticate():
+            return
+
         query = parse_qs(urlparse(self.path).query)
         if "id" not in query:
             self._set_headers(400)
@@ -139,6 +183,7 @@ class MotoBookingServer(BaseHTTPRequestHandler):
         
         self._set_headers(404)
         self.wfile.write(json.dumps({"error": "Booking not found"}).encode("utf-8"))
+
 
 def run(server_class=HTTPServer, handler_class=MotoBookingServer, port=8000):
     server_address = ("", port)
