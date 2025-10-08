@@ -1,0 +1,17 @@
+# Python bytecode files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment directories
+venv/
+env/
+.env
+
+# IDE files
+.idea/
+.vscode/
+
+# Git files
+.git
+.gitignore
